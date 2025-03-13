@@ -2,7 +2,7 @@ import os
 import shutil
 
 # 定义源文件夹路径和目标文件夹路径
-source_folder = r"C:\Users\leezh\Desktop\子实体"  # 替换为你的文件夹路径
+source_folder = r"C:\Users\leezh\Desktop\DataBuddy\bean"  # 替换为你的文件夹路径
 output_folder = "data"  # 替换为目标文件夹路径
 
 # 创建目标文件夹

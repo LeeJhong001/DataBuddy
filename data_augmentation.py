@@ -10,62 +10,48 @@ import os
 class DatasetAugmentation:
     def __init__(self):
         # 定义基础增强流程
-        self.transform = A.Compose([
+        self.augmentation_methods = [
             # 1. 几何变换
-            # A.OneOf([
-            #     A.HorizontalFlip(p=0.5),
-            #     A.VerticalFlip(p=0.3),
-            #     A.RandomRotate90(p=0.5),
-            #     A.Affine(
-            #         scale=(0.7, 1.3),
-            #         translate_percent=(-0.2, 0.2),
-            #         rotate=(-30, 30),
-            #         p=0.7
-            #     )
-            # ], p=0.8),
+            lambda img: A.Affine(
+                scale=(0.8, 1.2),
+                translate_percent=(-0.2, 0.2),
+                rotate=(-30, 30),
+                p=1.0
+            )(image=img)['image'],
             
             # 2. 颜色变换
-            A.OneOf([
+            lambda img: A.OneOf([
                 A.RandomBrightnessContrast(
-                    brightness_limit=0.3,
-                    contrast_limit=0.3,
-                    p=0.7
+                    brightness_limit=0.2,
+                    contrast_limit=0.2,
+                    p=1.0
                 ),
-                A.CLAHE(clip_limit=4.0, tile_grid_size=(8, 8), p=0.5),
                 A.HueSaturationValue(
-                    hue_shift_limit=15,
-                    sat_shift_limit=25,
-                    val_shift_limit=25,
-                    p=0.5
+                    hue_shift_limit=20,
+                    sat_shift_limit=30,
+                    val_shift_limit=20,
+                    p=1.0
+                ),
+                A.RGBShift(
+                    r_shift_limit=20,
+                    g_shift_limit=20,
+                    b_shift_limit=20,
+                    p=1.0
                 )
-            ], p=0.8),
+            ], p=1.0)(image=img)['image'],
             
-            # 3. 图像质量和噪声
-            A.OneOf([
-                A.GaussianBlur(blur_limit=(3, 7), p=0.3),
-                A.MotionBlur(blur_limit=3, p=0.3),
-                A.MedianBlur(blur_limit=3, p=0.3),
-                A.GaussNoise(
-                    var_limit=(10.0, 50.0),  # 修改var为var_limit
-                    mean=0,
-                    p=0.3
-                )
-            ], p=0.4),
-        ], 
-        # 添加关键点参数以支持圆形标注
-        keypoint_params=A.KeypointParams(
-            format='xy',  # 坐标格式
-            label_fields=['class_labels'],  # 标签字段
-            remove_invisible=False,  # 保留不可见点
-            angle_in_degrees=True  # 角度使用度数
-        ))
-        
-        # 定义单独的增强方法列表
-        self.augmentation_methods = [
-            self.brightness_contrast_aug,
-            self.blur_noise_aug,
-            self.color_aug,
-            self.geometric_aug
+            # 3. 噪声和模糊
+            lambda img: A.OneOf([
+                A.GaussNoise(p=1.0),  # 使用默认参数
+                A.GaussianBlur(blur_limit=(3, 7), p=1.0),
+                A.MotionBlur(blur_limit=(3, 7), p=1.0)
+            ], p=1.0)(image=img)['image'],
+            
+            # 4. 质量压缩
+            lambda img: A.ImageCompression(
+                quality=80,  # 设置JPEG压缩质量
+                p=1.0
+            )(image=img)['image']
         ]
 
     def process_labelme_annotation(self, label_data, image_shape):
@@ -201,14 +187,14 @@ class DatasetAugmentation:
         return True
 
     def convert_labelme_to_yolo(self, json_path, output_path, image_width, image_height):
-        """将 LabelMe 格式的圆形标注转换为 YOLO 格式"""
+        """将 LabelMe 格式的标注转换为 YOLO 格式"""
         try:
             with open(json_path, 'r', encoding='utf-8') as f:
                 labelme_data = json.load(f)
             
             yolo_lines = []
             for shape in labelme_data['shapes']:
-                if shape['shape_type'] != 'circle':
+                if shape['shape_type'] != 'rectangle':
                     continue
                     
                 # 获取类别ID (这里假设标签为'bean'的为0类)
@@ -218,26 +204,35 @@ class DatasetAugmentation:
                 if class_id == -1:
                     continue
                 
-                # 获取圆的两个点（圆心和圆周上的点）
-                center_point = shape['points'][0]
-                radius_point = shape['points'][1]
+                points = shape['points']
+                if len(points) != 4:  # 矩形框必须是4个点
+                    continue
+                    
+                # LabelMe的矩形框点的顺序：左上、右上、右下、左下
+                # 我们只需要左上角和右下角的点来计算中心点和宽高
+                x1, y1 = points[0]  # 左上角
+                x2, y2 = points[2]  # 右下角
                 
-                # 计算半径
-                radius_x = abs(radius_point[0] - center_point[0])
-                radius_y = abs(radius_point[1] - center_point[1])
-                radius = ((radius_x ** 2 + radius_y ** 2) ** 0.5) / 2
+                # 计算中心点坐标和宽高
+                center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2
+                width = abs(x2 - x1)
+                height = abs(y2 - y1)
                 
                 # 归一化坐标
-                center_x = center_point[0] / image_width
-                center_y = center_point[1] / image_height
-                radius_norm = radius / max(image_width, image_height)
+                center_x = center_x / image_width
+                center_y = center_y / image_height
+                width = width / image_width
+                height = height / image_height
                 
                 # 确保坐标在[0,1]范围内
                 center_x = np.clip(center_x, 0, 1)
                 center_y = np.clip(center_y, 0, 1)
+                width = np.clip(width, 0, 1)
+                height = np.clip(height, 0, 1)
                 
-                # 写入YOLO格式: class_id center_x center_y radius
-                yolo_lines.append(f"{class_id} {center_x:.6f} {center_y:.6f} {radius_norm:.6f}")
+                # 写入YOLO格式: class_id center_x center_y width height
+                yolo_lines.append(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}")
             
             if yolo_lines:
                 with open(output_path, 'w', encoding='utf-8') as f:
@@ -296,81 +291,19 @@ class DatasetAugmentation:
                     # 移动图像
                     shutil.move(str(img_path), str(split_images_dir / img_path.name))
                     
-                    # 处理标签文件
-                    json_path = labels_dir / (img_path.stem + '.json')
-                    txt_path = split_labels_dir / (img_path.stem + '.txt')
-                    
-                    if json_path.exists():
-                        # 读取图像尺寸
-                        img = cv2.imread(str(split_images_dir / img_path.name))
-                        if img is None:
-                            print(f"警告: 无法读取图片 {img_path}")
-                            continue
-                            
-                        height, width = img.shape[:2]
-                        
-                        # 转换并保存YOLO格式标签
-                        self.convert_labelme_to_yolo(json_path, txt_path, width, height)
-                        print(f"  - 已处理: {img_path.name}")
+                    # 移动对应的标签文件（.txt文件）
+                    txt_path = labels_dir / f"{img_path.stem}.txt"
+                    if txt_path.exists():
+                        shutil.move(str(txt_path), str(split_labels_dir / txt_path.name))
+                        print(f"  - 已处理: {img_path.name} 及其标签文件")
+                    else:
+                        print(f"警告: 找不到标签文件 {txt_path}")
                     
                 except Exception as e:
                     print(f"错误: 处理文件 {img_path.name} 时出错: {str(e)}")
                     continue
 
         print("\n数据集分割完成!")
-
-    def brightness_contrast_aug(self, image):
-        """亮度和对比度增强"""
-        transform = A.Compose([
-            A.RandomBrightnessContrast(
-                brightness_limit=0.3,
-                contrast_limit=0.3,
-                p=0.7
-            )
-        ])
-        return transform(image=image)['image']
-    
-    def blur_noise_aug(self, image):
-        """模糊和噪声增强"""
-        transform = A.Compose([
-            A.OneOf([
-                A.GaussianBlur(blur_limit=(3, 7)),
-                A.MotionBlur(blur_limit=3),
-                A.MedianBlur(blur_limit=3),
-                A.GaussNoise(var_limit=(10.0, 50.0), mean=0)
-            ], p=1.0)
-        ])
-        return transform(image=image)['image']
-    
-    def color_aug(self, image):
-        """颜色增强"""
-        transform = A.Compose([
-            A.OneOf([
-                A.CLAHE(clip_limit=4.0, tile_grid_size=(8, 8)),
-                A.HueSaturationValue(
-                    hue_shift_limit=15,
-                    sat_shift_limit=25,
-                    val_shift_limit=25
-                )
-            ], p=1.0)
-        ])
-        return transform(image=image)['image']
-    
-    def geometric_aug(self, image):
-        """几何变换增强"""
-        transform = A.Compose([
-            A.OneOf([
-                A.HorizontalFlip(),
-                A.VerticalFlip(),
-                A.RandomRotate90(),
-                A.Affine(
-                    scale=(0.7, 1.3),
-                    translate_percent=(-0.2, 0.2),
-                    rotate=(-30, 30)
-                )
-            ], p=1.0)
-        ])
-        return transform(image=image)['image']
 
 if __name__ == "__main__":
     augmentor = DatasetAugmentation()
@@ -390,4 +323,4 @@ if __name__ == "__main__":
             val_ratio=0.1
         )
     else:
-        print("数据增强失败，程序终止") 
+        print("数据增强失败，程序终止")

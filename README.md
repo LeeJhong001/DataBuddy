@@ -1,100 +1,127 @@
-# 数据集处理工具说明
+# 豆类检测数据集处理工具
 
-本仓库包含两个Python脚本：`data_augmentation.py` 和 `divide_dataset.py`，用于自动化数据增强、标注格式转换及数据集管理。以下是详细功能介绍和使用说明。
+一个用于处理豆类检测数据集的工具，支持数据预处理、数据增强和数据集分割。
 
----
+## 快速开始
 
-## 文件目录结构
-运行前需确保原始数据按以下结构组织：
+### 1. 安装依赖
+```bash
+pip install albumentations opencv-python numpy
+```
 
-data/
-├── images/ # 存放原始图像（.jpg）
-└── labels/ # 存放LabelMe格式标注文件（.json）
-
----
-
-## 脚本功能说明
-
-###  `divide_dataset.py`
-#### **功能**
-- 将用户提供的原始数据（图片和JSON标注文件）按类别自动整理到标准化目录中。
-- 原始数据中的 `.jpg` 文件会被移动到 `data/images`，`.json` 文件会被移动到 `data/labels`。
-
-#### **使用场景**
-- 当原始数据混合存放时，用于快速初始化标准化的数据集目录结构。
-
-#### **参数配置**
-- `source_folder`: 原始数据存放路径（需用户自定义，如 `C:\Users\leezh\Desktop\子实体`）。
-- `output_folder`: 标准化输出目录（默认为 `data`）。
-
-#### **运行方式**
-```python
+### 2. 准备数据
+1. 将所有图片和标注文件放在同一个文件夹中
+2. 运行数据预处理脚本进行文件整理：
+```bash
 python divide_dataset.py
 ```
 
-###  `data_augmentation.py`
-
-#### **核心功能**
-
-1. **数据增强**
-   - 支持多种增强操作，包括：
-     - **颜色变换**：亮度/对比度调整、CLAHE直方图均衡化、色调/饱和度调整。
-     - **噪声与模糊**：高斯模糊、运动模糊、中值模糊、高斯噪声。
-   - 支持多边形标注的同步变换（如目标检测任务中的物体轮廓）。
-2. **数据集分割**
-   - 将增强后的数据按比例分割为训练集、验证集、测试集。
-   - 自动生成 `train/`、`val/`、`test/` 子目录。
-3. **标注格式转换**
-   - 将LabelMe格式（JSON）的标注转换为YOLO格式（.txt），支持多边形坐标归一化。
-
-#### **类与方法说明**
-
-- **`DatasetAugmentation` 类**
-  - `augment_dataset()`: 对数据集进行增强，生成多组增强图像及标注。
-    - 参数：
-      - `data_dir`: 输入数据路径（如 `data/images`）。
-      - `output_dir`: 增强数据输出路径（如 `data/augmented`）。
-      - `num_augmentations`: 每张图像的增强次数（默认3次）。
-  - `split_dataset()`: 分割数据集。
-    - 参数：
-      - `dataset_dir`: 增强后的数据集路径。
-      - `train_ratio` 和 `val_ratio`: 训练集与验证集比例（测试集自动计算剩余部分）。
-
-#### **运行方式**
-
-```python
+### 3. 运行数据增强和分割
+```bash
 python data_augmentation.py
 ```
 
-##  依赖安装
+## 目录结构
 
-确保安装以下Python库：
-
-```python
-pip install albumentations opencv-python numpy jsonlib-python3 shutil random pathlib
+```
+project/
+├── data/
+│   ├── images/        # 原始图像
+│   ├── labels/        # 原始标注
+│   └── augmented/     # 增强后的数据
+│       ├── train/     # 训练集
+│       ├── val/       # 验证集
+│       └── test/      # 测试集
+├── data_augmentation.py
+├── divide_dataset.py
+└── README.md
 ```
 
-## 使用流程示例
+## 功能特性
 
-1. **整理原始数据**
-   运行 `divide_dataset.py`，将原始数据移动到 `data/images` 和 `data/labels`。
-2. **执行数据增强**
-   运行 `data_augmentation.py`，生成增强数据到 `data/augmented`。
-3. **查看结果**
-   - 增强后的数据保存在 `augmented/images` 和 `augmented/labels`。
-   - 分割后的数据集保存在 `augmented/train`、`augmented/val`、`augmented/test`。
+### 数据预处理
+- 自动整理图片(.jpg)和标注文件(.json)
+- 创建标准化的目录结构
 
-------
+### 数据增强
+支持多种增强方式的组合：
+
+1. 几何变换
+   - 缩放: 0.8-1.2
+   - 平移: ±20%
+   - 旋转: ±30°
+
+2. 颜色变换
+   - 亮度/对比度: ±20%
+   - 色调/饱和度/明度
+   - RGB通道偏移
+
+3. 噪声和模糊
+   - 高斯噪声
+   - 高斯模糊
+   - 运动模糊
+
+4. 质量压缩
+   - JPEG压缩质量: 80%
+
+### 数据集分割
+- 训练集: 80%
+- 验证集: 10%
+- 测试集: 10%
+
+## 数据要求
+
+### 图片要求
+- 格式: JPG
+- 分辨率: 建议保持一致
+
+### 标注要求
+- 格式: LabelMe JSON
+- 标注类型: 矩形框
+- 标签名称: "bean"
+
+## 配置说明
+
+### 数据增强配置
+```python
+# data_augmentation.py
+num_augmentations=25  # 每张图片增强数量
+```
+
+### 数据集分割配置
+```python
+# data_augmentation.py
+train_ratio=0.8  # 训练集比例
+val_ratio=0.1    # 验证集比例
+```
+
+## 输出格式
+
+### 图片文件
+- 格式: `原文件名_aug_序号.jpg`
+- 位置: `data/augmented/[train|val|test]/images/`
+
+### 标注文件
+- 格式: `原文件名_aug_序号.txt`
+- 位置: `data/augmented/[train|val|test]/labels/`
+- YOLO格式: `class_id center_x center_y width height`
+  - class_id: 0 (bean)
+  - 所有坐标已归一化到[0,1]
 
 ## 注意事项
 
-- **路径配置**：需根据实际环境修改 `divide_dataset.py` 中的 `source_folder`。
-- **标注兼容性**：当前支持LabelMe的多边形标注（`shape_type: 'polygon'`）。
-- **增强失败处理**：若某次增强出错（如坐标越界），脚本会自动跳过并继续处理下一张图像。
+1. 确保磁盘空间充足（建议预留原始数据集30倍空间）
+2. 程序会自动跳过处理失败的图片
+3. 建议使用Python 3.6+版本
 
-------
+## 错误处理
 
-## 扩展性
+- 所有错误和警告都会被记录并打印
+- 单个文件处理失败不会影响其他文件
+- 可以查看控制台输出了解处理进度和错误信息
 
-- **自定义增强策略**：可通过修改 `data_augmentation.py` 中的 `transform` 组合调整增强流程。
-- **多类别支持**：若需支持多类别，需修改 `convert_labelme_to_yolo()` 中的类别ID映射逻辑。
+## 系统要求
+
+- Python 3.6+
+- Windows/Linux/MacOS
+- 足够的磁盘空间
